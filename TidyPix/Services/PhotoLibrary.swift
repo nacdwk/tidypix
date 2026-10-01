@@ -52,6 +52,16 @@ final class PhotoLibrary {
         return candidates.randomElement()
     }
 
+    /// Days in earlier years that share `date`'s month and day, newest first.
+    func pastDays(matching date: Date) -> [Date] {
+        let calendar = Calendar.current
+        let target = calendar.dateComponents([.year, .month, .day], from: date)
+        return days.reversed().filter {
+            let parts = calendar.dateComponents([.year, .month, .day], from: $0)
+            return parts.month == target.month && parts.day == target.day && parts.year! < target.year!
+        }
+    }
+
     /// Moves the assets to Recently Deleted. iOS shows its own confirmation prompt.
     /// Nonisolated because PhotoKit runs the change block on its own queue.
     @concurrent
@@ -62,13 +72,12 @@ final class PhotoLibrary {
     }
 
     @concurrent
-    nonisolated static func assets(in interval: DateInterval) async -> [PHAsset] {
+    nonisolated static func assets(in intervals: [DateInterval]) async -> [PHAsset] {
+        guard !intervals.isEmpty else { return [] }
         let options = PHFetchOptions()
-        options.predicate = NSPredicate(
-            format: "creationDate >= %@ AND creationDate < %@",
-            interval.start as NSDate,
-            interval.end as NSDate
-        )
+        options.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: intervals.map {
+            NSPredicate(format: "creationDate >= %@ AND creationDate < %@", $0.start as NSDate, $0.end as NSDate)
+        })
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         let result = PHAsset.fetchAssets(with: options)
         return result.objects(at: IndexSet(integersIn: 0..<result.count))

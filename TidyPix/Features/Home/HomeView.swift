@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(PhotoLibrary.self) private var library
+    @Environment(NotificationRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("cleanupStats") private var stats = CleanupStats()
     @State private var destination: DateRange?
@@ -31,6 +32,9 @@ struct HomeView: View {
         }
         .task(id: scenePhase) {
             if scenePhase == .active { await library.refreshAccess() }
+        }
+        .onChange(of: router.pendingReminderTap && library.hasIndexed, initial: true) { _, ready in
+            if ready { openFromReminder() }
         }
     }
 
@@ -80,12 +84,30 @@ struct HomeView: View {
             }
 
             GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
-                    RangeButton(title: "Today", systemImage: "sun.max.fill") { destination = .today }
-                    RangeButton(title: "Last 7 days", systemImage: "calendar") { destination = .lastSevenDays }
-                    RangeButton(title: "Last 30 days", systemImage: "calendar.badge.clock") { destination = .lastThirtyDays }
+                VStack(spacing: 12) {
+                    let onThisDay = library.pastDays(matching: .now)
+                    if !onThisDay.isEmpty {
+                        OnThisDayCard(days: onThisDay) { destination = .onThisDay(onThisDay) }
+                    }
+                    HStack(spacing: 12) {
+                        RangeButton(title: "Today", systemImage: "sun.max.fill") { destination = .today }
+                        RangeButton(title: "Last 7 days", systemImage: "calendar") { destination = .lastSevenDays }
+                        RangeButton(title: "Last 30 days", systemImage: "calendar.badge.clock") { destination = .lastThirtyDays }
+                    }
                 }
             }
+        }
+    }
+
+    /// The daily reminder opens On This Day, or a random day when there's nothing from past years.
+    private func openFromReminder() {
+        router.pendingReminderTap = false
+        showSettings = false
+        let onThisDay = library.pastDays(matching: .now)
+        if !onThisDay.isEmpty {
+            destination = .onThisDay(onThisDay)
+        } else if let day = library.randomDay() {
+            destination = .day(day)
         }
     }
 
@@ -108,6 +130,52 @@ struct HomeView: View {
     private func pickRandomDay() {
         guard let day = library.randomDay() else { return }
         destination = .day(day)
+    }
+}
+
+private struct OnThisDayCard: View {
+    let days: [Date]
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(.brand, in: .rect(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("On This Day")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .contentShape(.rect(cornerRadius: 24))
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24))
+    }
+
+    /// "Oct 1 in 2019 and 2023", or "Oct 1 across 7 years" when there are many.
+    private var subtitle: String {
+        let date = Date.now.formatted(.dateTime.month(.abbreviated).day())
+        guard days.count <= 3 else { return "\(date) across \(days.count) years" }
+        let years = days
+            .map { Calendar.current.component(.year, from: $0) }
+            .sorted()
+            .map(String.init)
+        return "\(date) in \(years.formatted(.list(type: .and)))"
     }
 }
 
