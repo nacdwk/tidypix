@@ -26,12 +26,32 @@ final class ReviewModel {
         return selection.reduce(0) { $0 + (sizes[$1] ?? 0) }
     }
 
+    /// Assets grouped by the year they were taken, in display order. Empty unless the range groups by year.
+    var yearSections: [YearSection] {
+        guard range.groupsByYear else { return [] }
+        var sections: [YearSection] = []
+        for asset in assets {
+            let year = Self.year(of: asset)
+            if sections.last?.year == year {
+                sections[sections.count - 1].assets.append(asset)
+            } else {
+                sections.append(YearSection(year: year, assets: [asset]))
+            }
+        }
+        return sections
+    }
+
     var subtitle: String {
         guard !isLoading else { return "" }
         let videos = assets.count { $0.mediaType == .video }
         let photos = assets.count - videos
         var parts: [String] = []
         if let age = range.relativeAge, range.isSingleDay { parts.append(age) }
+        if range.groupsByYear, !assets.isEmpty {
+            let years = Set(assets.map(Self.year(of:))).count
+            parts.append(Date.now.formatted(.dateTime.month(.abbreviated).day()))
+            parts.append(years == 1 ? "1 year" : "\(years) years")
+        }
         if photos > 0 || videos == 0 { parts.append(photos == 1 ? "1 photo" : "\(photos) photos") }
         if videos > 0 { parts.append(videos == 1 ? "1 video" : "\(videos) videos") }
         return parts.joined(separator: " · ")
@@ -43,8 +63,13 @@ final class ReviewModel {
         clearedEverything = false
         ImageLoader.shared.stopPreheating()
 
-        let fetched = await PhotoLibrary.assets(in: range.interval)
+        var fetched = await PhotoLibrary.assets(in: range.intervals)
         guard !Task.isCancelled else { return }
+        if range.groupsByYear {
+            // Newest year first, oldest-to-newest within a year. The viewer pages in this same order.
+            let byYear = Dictionary(grouping: fetched, by: Self.year(of:))
+            fetched = byYear.keys.sorted(by: >).flatMap { byYear[$0]! }
+        }
         assets = fetched
         isLoading = false
         ImageLoader.shared.preheat(Array(fetched.prefix(60)))
@@ -92,5 +117,20 @@ final class ReviewModel {
         selection.subtract(deletedIDs)
         clearedEverything = assets.isEmpty
         return (doomed.count, bytes)
+    }
+
+    private static func year(of asset: PHAsset) -> Int {
+        Calendar.current.component(.year, from: asset.creationDate ?? .now)
+    }
+}
+
+struct YearSection: Identifiable {
+    let year: Int
+    var assets: [PHAsset]
+
+    var id: Int { year }
+
+    var yearsAgo: String {
+        DateRange.yearsAgo(Calendar.current.component(.year, from: .now) - year)
     }
 }

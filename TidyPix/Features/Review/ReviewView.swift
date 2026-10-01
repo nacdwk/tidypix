@@ -23,8 +23,20 @@ struct ReviewView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 4) {
-                    ForEach(model.assets, id: \.localIdentifier) { asset in
-                        cell(for: asset)
+                    if model.range.groupsByYear {
+                        ForEach(model.yearSections) { section in
+                            Section {
+                                ForEach(section.assets, id: \.localIdentifier) { asset in
+                                    cell(for: asset)
+                                }
+                            } header: {
+                                YearHeader(section: section)
+                            }
+                        }
+                    } else {
+                        ForEach(model.assets, id: \.localIdentifier) { asset in
+                            cell(for: asset)
+                        }
                     }
                 }
                 .padding(.horizontal, 4)
@@ -188,6 +200,26 @@ struct ReviewView: View {
         let kind = asset.mediaType == .video ? "Video" : "Photo"
         guard let created = asset.creationDate else { return kind }
         return "\(kind), \(created.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+private struct YearHeader: View {
+    let section: YearSection
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(String(section.year))
+                .font(.title3.bold())
+            Text(section.yearsAgo)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 16)
+        .padding(.bottom, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
