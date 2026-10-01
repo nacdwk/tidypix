@@ -20,6 +20,3 @@ xcuserdata/
 .AppleDouble
 .LSOverride
 ._*
-
-# Project-specific
-generate_project.py

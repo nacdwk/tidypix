@@ -1,50 +1,61 @@
 import Foundation
 
-enum DateRange: Hashable, Identifiable {
-    case specificDate(Date)
+nonisolated enum DateRange: Hashable, Sendable {
+    case day(Date)
     case today
     case lastSevenDays
     case lastThirtyDays
 
-    var id: String {
-        switch self {
-        case .specificDate(let date): return "date-\(date.timeIntervalSince1970)"
-        case .today: return "today"
-        case .lastSevenDays: return "last7"
-        case .lastThirtyDays: return "last30"
-        }
-    }
-
-    var dateInterval: DateInterval {
+    var interval: DateInterval {
         let calendar = Calendar.current
-        let now = Date()
-        let startOfToday = calendar.startOfDay(for: now)
+        let today = calendar.startOfDay(for: .now)
+        let start: Date
+        let end: Date
         switch self {
-        case .specificDate(let date):
-            let start = calendar.startOfDay(for: date)
-            let end = calendar.date(byAdding: .day, value: 1, to: start)!
-            return DateInterval(start: start, end: end)
+        case .day(let date):
+            start = calendar.startOfDay(for: date)
+            end = calendar.date(byAdding: .day, value: 1, to: start)!
         case .today:
-            let start = startOfToday
-            let end = calendar.date(byAdding: .day, value: 1, to: start)!
-            return DateInterval(start: start, end: end)
+            start = today
+            end = calendar.date(byAdding: .day, value: 1, to: today)!
         case .lastSevenDays:
-            let start = calendar.date(byAdding: .day, value: -6, to: startOfToday)!
-            let end = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
-            return DateInterval(start: start, end: end)
+            start = calendar.date(byAdding: .day, value: -6, to: today)!
+            end = calendar.date(byAdding: .day, value: 1, to: today)!
         case .lastThirtyDays:
-            let start = calendar.date(byAdding: .day, value: -29, to: startOfToday)!
-            let end = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
-            return DateInterval(start: start, end: end)
+            start = calendar.date(byAdding: .day, value: -29, to: today)!
+            end = calendar.date(byAdding: .day, value: 1, to: today)!
+        }
+        return DateInterval(start: start, end: end)
+    }
+
+    var title: String {
+        switch self {
+        case .day(let date): date.formatted(.dateTime.day().month(.abbreviated).year())
+        case .today: "Today"
+        case .lastSevenDays: "Last 7 Days"
+        case .lastThirtyDays: "Last 30 Days"
         }
     }
 
-    var displayTitle: String {
-        switch self {
-        case .specificDate(let date): return date.dayMonthAndYear
-        case .today: return "Today"
-        case .lastSevenDays: return "Last 7 Days"
-        case .lastThirtyDays: return "Last 30 Days"
+    var isSingleDay: Bool {
+        if case .day = self { true } else { false }
+    }
+
+    /// "6 years ago", "3 months ago", "Yesterday" — only meaningful for a single past day.
+    var relativeAge: String? {
+        guard case .day(let date) = self else { return nil }
+        let calendar = Calendar.current
+        let parts = calendar.dateComponents(
+            [.year, .month, .day],
+            from: calendar.startOfDay(for: date),
+            to: calendar.startOfDay(for: .now)
+        )
+        if let years = parts.year, years > 0 { return years == 1 ? "1 year ago" : "\(years) years ago" }
+        if let months = parts.month, months > 0 { return months == 1 ? "1 month ago" : "\(months) months ago" }
+        switch parts.day ?? 0 {
+        case 0: return "Today"
+        case 1: return "Yesterday"
+        case let days: return "\(days) days ago"
         }
     }
 }
