@@ -1,59 +1,37 @@
 import Foundation
 
-struct CleanupStats: Codable, Equatable {
-    var totalPhotosDeleted: Int = 0
+nonisolated struct CleanupStats: Equatable {
+    var totalPhotosDeleted = 0
     var totalBytesFreed: Int64 = 0
     var weeklyDeletedCounts: [String: Int] = [:]
-    var lastSessionCount: Int = 0
+    var lastSessionCount = 0
     var lastSessionDate: Date?
 
-    private enum CodingKeys: String, CodingKey {
-        case totalPhotosDeleted
-        case totalBytesFreed
-        case weeklyDeletedCounts
-        case lastSessionCount
-        case lastSessionDate
-    }
-
-    init() {}
-
-    init(
-        totalPhotosDeleted: Int = 0,
-        totalBytesFreed: Int64 = 0,
-        weeklyDeletedCounts: [String: Int] = [:],
-        lastSessionCount: Int = 0,
-        lastSessionDate: Date? = nil
-    ) {
-        self.totalPhotosDeleted = totalPhotosDeleted
-        self.totalBytesFreed = totalBytesFreed
-        self.weeklyDeletedCounts = weeklyDeletedCounts
-        self.lastSessionCount = lastSessionCount
-        self.lastSessionDate = lastSessionDate
-    }
-
     var thisWeekCount: Int {
-        weeklyDeletedCounts[Date().isoWeekString] ?? 0
-    }
-
-    var storageFreedFormatted: String {
-        ByteCountFormatter.string(fromByteCount: totalBytesFreed, countStyle: .file)
-    }
-
-    var totalPhotosFormatted: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        return formatter.string(from: NSNumber(value: totalPhotosDeleted)) ?? "\(totalPhotosDeleted)"
+        weeklyDeletedCounts[Self.weekKey(for: .now)] ?? 0
     }
 
     mutating func recordDeletion(count: Int, bytes: Int64) {
         totalPhotosDeleted += count
         totalBytesFreed += bytes
         lastSessionCount = count
-        lastSessionDate = Date()
+        lastSessionDate = .now
+        weeklyDeletedCounts[Self.weekKey(for: .now), default: 0] += count
+    }
 
-        let weekKey = Date().isoWeekString
-        weeklyDeletedCounts[weekKey, default: 0] += count
+    private static func weekKey(for date: Date) -> String {
+        let calendar = Calendar(identifier: .iso8601)
+        let year = calendar.component(.yearForWeekOfYear, from: date)
+        let week = calendar.component(.weekOfYear, from: date)
+        return String(format: "%04d-W%02d", year, week)
+    }
+}
+
+// Hand-written so the RawRepresentable conformance below doesn't get used for encoding,
+// which would recurse forever.
+extension CleanupStats: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case totalPhotosDeleted, totalBytesFreed, weeklyDeletedCounts, lastSessionCount, lastSessionDate
     }
 
     init(from decoder: Decoder) throws {
@@ -75,23 +53,12 @@ struct CleanupStats: Codable, Equatable {
     }
 }
 
-// MARK: - @AppStorage support via RawRepresentable
-
 extension CleanupStats: RawRepresentable {
     init?(rawValue: String) {
-        guard let data = rawValue.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode(CleanupStats.self, from: data) else {
-            self = CleanupStats()
-            return
-        }
-        self = decoded
+        self = (try? JSONDecoder().decode(Self.self, from: Data(rawValue.utf8))) ?? Self()
     }
 
     var rawValue: String {
-        guard let data = try? JSONEncoder().encode(self),
-              let string = String(data: data, encoding: .utf8) else {
-            return "{}"
-        }
-        return string
+        (try? String(data: JSONEncoder().encode(self), encoding: .utf8)) ?? "{}"
     }
 }
